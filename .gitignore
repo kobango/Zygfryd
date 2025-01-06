@@ -1,0 +1,13 @@
+*.mp3
+*.wav
+
+*.db
+*.txt
+config.json
+Discord_test_old.py
+ffmpeg.exe
+Muzyka/
+pytube_fork/
+ffmpeg-master-latest-win64-gpl/
+Stable_difusion/
+__pycache__/
