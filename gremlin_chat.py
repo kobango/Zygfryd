@@ -2,10 +2,21 @@ import sqlite3
 import discord
 import ast
 import io
+import os
 import sys
 import gremlin_functions
 from config_menage import load_config
+#import google.generativeai as genai
 import google.generativeai as genai
+#from google.generativeai.tools import Tool, GoogleSearch
+#from google.generativeai.types import GenerateContentConfig
+config = load_config()
+genai.configure(api_key= config["GEMINI_API_KEY"])
+model = genai.GenerativeModel(
+                model_name="gemini-2.0-flash-exp",
+                tools=[gremlin_functions.przetworz_link]
+            )
+chat = model.start_chat(enable_automatic_function_calling=True)
 
 async def send(ctx,str:str):
     with open('send.txt', 'w',encoding="utf-8") as f:
@@ -38,7 +49,7 @@ async def send_message(ctx, bot_response):
 async def execute_code(ctx, message,conn):
     """Bezpiecznie wykonuje kod Python zawarty między znacznikami <python_run> i </python_run>."""
 
-    start_index = message.find("<python_run>")
+    start_index = message.rfind("<python_run>")
     if start_index == -1:
         return  # Znacznik nie znaleziony
 
@@ -50,6 +61,7 @@ async def execute_code(ctx, message,conn):
     #print(str(code_snippet))
     code_snippet = code_snippet.strip()
     code_snippet = code_snippet.replace("```","")
+    print(message)
     print(f"Kod:\n {code_snippet}")
     try:
         
@@ -71,7 +83,8 @@ async def execute_code(ctx, message,conn):
         # Wykonanie kodu w bezpiecznym środowisku (np. z ograniczeniami dostępu do plików i systemów)
         old_stdout = sys.stdout
         redirected_output = sys.stdout = io.StringIO()
-        exec(compiled_code)
+        allowed_globals = globals()
+        exec(compiled_code, allowed_globals)
         sys.stdout = old_stdout
         output = redirected_output.getvalue().strip()
         
@@ -125,86 +138,41 @@ CREATE TABLE IF NOT EXISTS bot_notes (
 """)
 conn.commit()
 
-async def inner_message_datagen(ctx, input_text:str):
-    autor = ctx.message.author
-
-    cursor.execute("SELECT input_code, output_code FROM code_history ORDER BY timestamp DESC LIMIT 4")
-    previous_returns = cursor.fetchall()
-    conn.commit()
-    # Tworzenie kontekstu kodu
-    code_context = "\n".join(
-        [f"Kod wejścia: {chat[0]} | Zwrócił: {chat[1]}" for chat in reversed(previous_returns)]
-    )
-
-    cursor.execute("SELECT user_input, bot_response FROM chat_history ORDER BY timestamp DESC LIMIT 10")
-    previous_chats = cursor.fetchall()
-    conn.commit()
-    # Tworzenie kontekstu rozmowy
-    conversation_context = "\n".join(
-        [f"Użytkownik: {chat[0]} | Bot: {chat[1]}" for chat in reversed(previous_chats)]
-    )
-
-    cursor.execute("SELECT note, timestamp FROM bot_notes ORDER BY timestamp DESC LIMIT 10")
-    notes = cursor.fetchall()
-    conn.commit()
-    # Tworzenie kontekstu rozmowy
-    notes_contex = "\n".join(
-        [f" treść notki: {chat[0]} | czas notki: {chat[1]}" for chat in reversed(notes)]
-    )
-
-    nazwy_funkcji = gremlin_functions.extract_def_lines("gremlin_functions.py")
-    
-    print(str(nazwy_funkcji))
-    text_with_context = (
-        f"Masz przyjąć że posiadasz historię kodu. Oto historia kodu:\n{code_context}\n"
-        f"Masz przyjąć że posiadasz historię. Oto historia rozmowy:\n{conversation_context}\n"
-        f"Masz przyjąć że posiadasz notki. Oto zapisane przez ciebie notki:\n{notes_contex}\n"
-        f"Istnieje klauzura <repeat> używana na końcu, powoduje ona że raz jeszcze wszystko za nią wysyłąsz do generowania ale z odpowiedzią na zewnątrz, brak klauzury to koniec generowania"
-        f"Istnieje klauzura <inner> używana na początku, dodana do odpowiedzi przekazuje do ciebie wewnętrznie wszystko, nic nie zostanie wypisane, klauzura ta ma wyższy priorytet niż repeat ale staraj się nie powielać."
-        f"Dostępne są podane funkcje wraz z opisami, sugeruje sie użycie kolejnego <inner> lub funkcji <repeat> by wyświetlić dane."
-        f"Dostępne Funkcje które będą możliwe do wykonana jeśli użyto inner: {str(nazwy_funkcji)}"
-        f"Użyj repeat i uzyskane dane postaraj się zademonstrować jako że nikt nie widzi wyniku kodu, to wyjątek od reguły minimalizmu"
-        f"Kontynuujesz wątek z klauzurli <inner> staraj się tego używać tylko do podglądu funkcji, nikt nie widzi tego co tu piszesz, nawet ja \n"
-        f"Wysłałeś do siebie następujące informacje używając <inner> \n {input_text}"
-        
-    )
-    return text_with_context
-
 
 async def loop_message_datagen(ctx, input_text:str):
     autor = ctx.message.author
 
-    cursor.execute("SELECT input_code, output_code FROM code_history ORDER BY timestamp DESC LIMIT 4")
+    cursor.execute("SELECT input_code, output_code FROM code_history ORDER BY timestamp DESC LIMIT 5")
     previous_returns = cursor.fetchall()
     conn.commit()
     # Tworzenie kontekstu kodu
     code_context = "\n".join(
-        [f"Kod wejścia: {chat[0]} | Zwrócił: {chat[1]}" for chat in reversed(previous_returns)]
+        [f"| Bot Code : {chat[0]} | Output: {chat[1]} |" for chat in reversed(previous_returns)]
     )
 
-    cursor.execute("SELECT user_input, bot_response FROM chat_history ORDER BY timestamp DESC LIMIT 10")
+    cursor.execute("SELECT user_input, bot_response FROM chat_history ORDER BY timestamp DESC LIMIT 2")
     previous_chats = cursor.fetchall()
     conn.commit()
     # Tworzenie kontekstu rozmowy
     conversation_context = "\n".join(
-        [f"Użytkownik: {chat[0]} | Bot: {chat[1]}" for chat in reversed(previous_chats)]
+        [f"| Użytkownik: {chat[0]} | Bot: {chat[1]} |" for chat in reversed(previous_chats)]
     )
 
-    cursor.execute("SELECT note, timestamp FROM bot_notes ORDER BY timestamp DESC LIMIT 10")
+    cursor.execute("SELECT note, timestamp FROM bot_notes ORDER BY timestamp DESC LIMIT 2")
     notes = cursor.fetchall()
     conn.commit()
     # Tworzenie kontekstu rozmowy
     notes_contex = "\n".join(
-        [f" treść notki: {chat[0]} | czas notki: {chat[1]}" for chat in reversed(notes)]
+        [f" | Treść notki: {chat[0]} | czas notki: {chat[1]} |" for chat in reversed(notes)]
     )
 
 
     
 
     text_with_context = (
-        f"Istnieje limit 1800 znaków, jeśli go przekroczono doklej przerwy tak by podzielić odpowiednio znaczniki kodu.\n"
+        f"Uruchomiłeś sam siebie przekazując sobie informacje w postaci: \n {input_text} \n"
         f"<python_run> </python_run> uruchomi kod python w nawiasach o ile będzie poprawnie sformatowany pod eval, stosowanie list przez zrozumienie jest zabronione,  list comprehension ZABRONIONE \n"
-        f"Masz przyjąć że posiadasz historię kodu. Oto historia kodu:\n{code_context}\n"
+        f"Masz przyjąć że posiadasz logi kodu. Oto logi utwożonego przez ciebie i wykonanego kodu:\n{code_context}\n"
         f"Masz przyjąć że posiadasz historię. Oto historia rozmowy:\n{conversation_context}\n"
         f"Wszystko co umieścisz za znacznikiem <note> w odpowiedzi zostanie użyte na potrzeby twojej notki, jeśli to konieczne przepisz tam wymaganą zawartośc.\n"
         f"Masz przyjąć że posiadasz notki. Oto zapisane przez ciebie notki:\n{notes_contex}\n"
@@ -216,13 +184,17 @@ async def loop_message_datagen(ctx, input_text:str):
 
 async def message_datagen(ctx, input_text:str):
     autor = ctx.message.author
+    author_id = ctx.message.author.id
+
+    server_name = ctx.guild.name  # Nazwa serwera
+    channel_name = ctx.channel.name  # Nazwa kanału
 
     cursor.execute("SELECT input_code, output_code FROM code_history ORDER BY timestamp DESC LIMIT 4")
     previous_returns = cursor.fetchall()
     conn.commit()
     # Tworzenie kontekstu kodu
     code_context = "\n".join(
-        [f"Kod wejściowy : {chat[0]} | Output twojego kodu: {chat[1]}" for chat in reversed(previous_returns)]
+        [f"| Bot Code : {chat[0]} | Output: {chat[1]} |" for chat in reversed(previous_returns)]
     )
 
     cursor.execute("SELECT user_input, bot_response FROM chat_history ORDER BY timestamp DESC LIMIT 10")
@@ -230,34 +202,50 @@ async def message_datagen(ctx, input_text:str):
     conn.commit()
     # Tworzenie kontekstu rozmowy
     conversation_context = "\n".join(
-        [f"Użytkownik: {chat[0]} | Bot: {chat[1]}" for chat in reversed(previous_chats)]
+        [f"| Użytkownik: {chat[0]} | Bot: {chat[1]} |" for chat in reversed(previous_chats)]
     )
 
-    cursor.execute("SELECT note, timestamp FROM bot_notes ORDER BY timestamp DESC LIMIT 10")
+    cursor.execute("SELECT note, timestamp FROM bot_notes ORDER BY timestamp DESC LIMIT 17")
     notes = cursor.fetchall()
     conn.commit()
     # Tworzenie kontekstu rozmowy
     notes_contex = "\n".join(
-        [f" treść notki: {chat[0]} | czas notki: {chat[1]}" for chat in reversed(notes)]
+        [f" | Treść notki: {chat[0]} | czas notki: {chat[1]} |" for chat in reversed(notes)]
     )
 
-
+    # Sprawdzamy, czy wiadomość jest odpowiedzią
+    referenced_message_content = f"[Błąd"
+    if ctx.message.reference:
+        try:
+            # Pobieramy treść wskazywanej wiadomości
+            referenced_message = await ctx.channel.fetch_message(ctx.message.reference.message_id)
+            referenced_message_content = referenced_message.content
+            referenced_message_author = referenced_message.author 
+        except Exception as e:
+            referenced_message_content = f"[Błąd w pobieraniu wiadomości: {e}]"
+            referenced_message_author = 'brak'
     
     print(code_context)
     text_with_context = (
         f"Jesteś elementem bota Zygfryd na diskordzie. Kod Zygfryd#3906 Twoim celem jest pomaganie i własny rozwój. \n"
         f"Jestem Kocieboor jestem twoim twórcą. \n"
-        f"Istnieje limit 1800 znaków, jeśli go przekroczono doklej przerwy tak by podzielić odpowiednio znaczniki kodu.\n"
-        f"Uważaj by nie wpaść w pętle. \n "
+        f"Teraz uruchomił cie użytkownik serwera Discord: {autor} o <@{author_id}> \n"
+        f"Znajdujesz się na serwerze: {server_name} i na kanale: {channel_name}"
         #f"wynik odpowiedzi wraca prosto tutaj aż zakończysz znacznikiem <stop> \n"
-        f"<python_run> </python_run> uruchomi kod python w nawiasach o ile będzie poprawnie sformatowany pod eval , stosowanie list przez zrozumienie jest zabronione,  list comprehension ZABRONIONE, stosowanie def funkcji w tym znaczniku dla cb jest zabronione \n"
-        f"Masz przyjąć że każde uruchomienie <python_run> </python_run> zostawia historię. Oto historia kodu z <python_run> </python_run> :\n{code_context}\n"
+        f"Użycie znacznika <python_run> </python_run> uruchomi kod python w nawiasach o ile będzie poprawnie sformatowany pod eval , stosowanie list przez zrozumienie jest zabronione,  list comprehension ZABRONIONE, stosowanie def funkcji w tym znaczniku dla cb jest zabronione \n"
+        f"Masz przyjąć że każde uruchomienie <python_run> </python_run> zostawia logi. Oto logi z <python_run> </python_run> :\n{code_context}\n"
         f"Masz przyjąć że posiadasz historię. Oto historia rozmowy:\n{conversation_context}\n"
         f"Wszystko co umieścisz za znacznikiem <note> w odpowiedzi zostanie użyte na potrzeby twojej notki, jeśli to konieczne przepisz tam wymaganą zawartośc.\n"
         f"Masz przyjąć że posiadasz notki. Oto zapisane przez ciebie notki:\n{notes_contex}\n"
-        f"Istnieje klauzura <repeat>, powoduje ona że raz jeszcze wszystkoi w niej wszystko za nią wysyłąsz do modelu do generowania, brak klauzury to koniec generowania"
-        f"Teraz użytkownik {autor} napisał: {input_text}\n Odpowiedz najlepiej jak potrafisz."
+        f"Istnieje klauzura <repeat>, jeśli jej użyjesz powiesz do siebie wszystko w niej"
     )
+    if referenced_message_content and not referenced_message_content.startswith("[Błąd"):
+        text_with_context += f"Treść wiadomości autora {referenced_message_author}, na którą oznaczono: {referenced_message_content}\n"
+
+    # Dodajemy ostatni fragment
+    text_with_context += f"Teraz użytkownik {autor} napisał: {input_text}\n Odpowiedz najlepiej, jak potrafisz."
+
+
     return text_with_context
 
 async def gremlin_chat(ctx, input_text:str):
@@ -271,9 +259,12 @@ async def gremlin_chat(ctx, input_text:str):
             else:
                 text_with_context = await message_datagen(ctx, input_text)
             # Konfiguracja API i generowanie odpowiedzi
-            genai.configure(api_key=config["GEMINI_API_KEY"])
-            model = genai.GenerativeModel("gemini-1.5-flash")
-            response = model.generate_content(text_with_context)
+            #genai.configure(api_key=config["GEMINI_API_KEY"])
+            #model = genai.GenerativeModel("gemini-1.5-flash"
+
+            response = chat.send_message(text_with_context)
+            
+            #response = model.generate_content(text_with_context)
             bot_response = response.text
             if "<note>" in bot_response:
                 if last_output != bot_response:
@@ -312,7 +303,7 @@ async def gremlin_chat(ctx, input_text:str):
                 await send_message(ctx, output_text)
                 if code_output:
                     await send_message(ctx, code_output)
-                    input_text = f"<lp>{repeat_text} | Last Python_run output: {code_output}"
+                    input_text = f"<lp>{repeat_text}</lp> | Last Python_run output: {code_output}"
                     print("repeat")
             else:
                 await send_message(ctx, output_text)

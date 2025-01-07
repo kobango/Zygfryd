@@ -1,3 +1,4 @@
+import asyncio
 import discord
 from discord.ext import commands
 #from discord import app_commands
@@ -295,6 +296,7 @@ async def chat(ctx):
         input_text = ctx.message.content[4:]
         # Send an API request and get a respons
         await gremlin_chat(ctx,input_text)
+        
         #genai.configure(api_key=config["GEMINI_API_KEY"])
         #model = genai.GenerativeModel("gemini-1.5-flash")
         #text_with_contekst = "Jesteś elementem bota na diskordzie a to zadany ci tekst, nazywasz się Zygfryd, odpowiedzi dłuższe niż 1.5k znaków będą jako pliki tekstowe więc stosuj w nim odpowiednie formatowanie, odpowiedz najlepiej jak umiesz:"+input_text

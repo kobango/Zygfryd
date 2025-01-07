@@ -55,7 +55,7 @@ def przetworz_link(url:str):
 
     # ... Dodaj więcej logiki ekstrakcji danych (np. tekst, metadane) ...
 
-    return {"url": url, "tytul": tytul}   # ...inne dane...}
+    return {"url": url, "tytul": tytul, "treść": soup.get_text()}   # ...inne dane...}
 
 
   except requests.exceptions.RequestException as e:

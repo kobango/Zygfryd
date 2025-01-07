@@ -9,7 +9,6 @@ import sqlite3 as sl
 import time
 import asyncio
 from moviepy.tools import subprocess_call
-from moviepy.config import get_setting
 import youtube_dl
 
 
