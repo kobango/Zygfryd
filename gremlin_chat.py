@@ -8,6 +8,11 @@ import gremlin_functions
 from config_menage import load_config
 #import google.generativeai as genai
 import google.generativeai as genai
+import mimetypes
+import re
+import random
+import string
+
 #from google.generativeai.tools import Tool, GoogleSearch
 #from google.generativeai.types import GenerateContentConfig
 config = load_config()
@@ -18,31 +23,77 @@ model = genai.GenerativeModel(
             )
 chat = model.start_chat(enable_automatic_function_calling=True)
 
+def generate_random_uid(length=5):
+    # Zbiór znaków (małe litery, duże litery i cyfry)
+    characters = string.ascii_lowercase + string.ascii_uppercase + string.digits
+    # Generowanie losowego ciągu
+    random_uid = ''.join(random.choice(characters) for _ in range(length))
+    return random_uid
+
+def sanitize_filename(filename):
+    # Usuń niedozwolone znaki i upewnij się, że nazwa pliku nie zaczyna ani kończy się myślnikiem
+    sanitized = re.sub(r'[^a-z0-9-"]', '', filename.lower())  # Tylko małe litery, cyfry i myślniki
+    if sanitized.startswith('-'):
+        sanitized = sanitized[1:]  # Usuń myślnik na początku
+    if sanitized.endswith('-'):
+        sanitized = sanitized[:-1]  # Usuń myślnik na końcu
+    return sanitized
+
 async def send(ctx,str:str):
     with open('send.txt', 'w',encoding="utf-8") as f:
         f.write("\n"+str) 
     file = discord.File('send.txt')
     await ctx.channel.send('See attachment below',file=file)
 
-def podziel_tekst(tekst, max_dlugosc):
-    akapity = tekst.split('\n\n')
-    fragmenty = []
-    biezacy_fragment = ""
-    for akapit in akapity:
-        if len(biezacy_fragment) + len(akapit) <= max_dlugosc:
-            biezacy_fragment += akapit + '\n\n'
-        else:
-            fragmenty.append(biezacy_fragment.strip())
-            biezacy_fragment = akapit + '\n\n'
-    fragmenty.append(biezacy_fragment.strip())
-    return fragmenty
+def podziel_tekst_rekurencyjnie(tekst, max_dlugosc, znaki_podzialu=None):
+    if znaki_podzialu is None:
+        znaki_podzialu = ['\n\n', '\n', ' ']  # Kolejność podziałów
+    
+    # Jeśli tekst mieści się w limicie, zwracamy go jako jeden fragment
+    if len(tekst) <= max_dlugosc:
+        return [tekst.strip()]
+
+    # Próbujemy podzielić tekst używając aktualnego znaku podziału
+    if znaki_podzialu:
+        znak = znaki_podzialu[0]
+        fragmenty = tekst.split(znak)
+        aktualny_fragment = ""
+        wynik = []
+
+        for fragment in fragmenty:
+            if len(aktualny_fragment) + len(fragment) + len(znak) <= max_dlugosc:
+                aktualny_fragment += fragment + znak
+            else:
+                if aktualny_fragment:
+                    wynik.append(aktualny_fragment.strip())
+                aktualny_fragment = fragment + znak
+
+        if aktualny_fragment.strip():
+            wynik.append(aktualny_fragment.strip())
+
+        # Jeśli fragmenty nadal są zbyt długie, dzielimy je rekurencyjnie
+        ostateczny_wynik = []
+        for czesc in wynik:
+            if len(czesc) > max_dlugosc:
+                ostateczny_wynik.extend(
+                    podziel_tekst_rekurencyjnie(czesc, max_dlugosc, znaki_podzialu[1:])
+                )
+            else:
+                ostateczny_wynik.append(czesc)
+        
+        return ostateczny_wynik
+
+    # Jeśli brak znaków podziału, dzielimy na kawałki o maksymalnej długości
+    return [tekst[i:i + max_dlugosc] for i in range(0, len(tekst), max_dlugosc)]
+
+
 
 async def send_message(ctx, bot_response):
     """Wysyła odpowiedź na Discord, dzieląc ją na mniejsze części, jeśli jest za długa."""
     if len(bot_response) <= 1800:
         await ctx.channel.send(bot_response)
     else:
-        parts = podziel_tekst(bot_response,1800)
+        parts = podziel_tekst_rekurencyjnie(bot_response,1800)
         for part in parts:
             await ctx.channel.send(part)    
 
@@ -197,7 +248,7 @@ async def message_datagen(ctx, input_text:str):
         [f"| Bot Code : {chat[0]} | Output: {chat[1]} |" for chat in reversed(previous_returns)]
     )
 
-    cursor.execute("SELECT user_input, bot_response FROM chat_history ORDER BY timestamp DESC LIMIT 10")
+    cursor.execute("SELECT user_input, bot_response FROM chat_history ORDER BY timestamp DESC LIMIT 6")
     previous_chats = cursor.fetchall()
     conn.commit()
     # Tworzenie kontekstu rozmowy
@@ -205,7 +256,7 @@ async def message_datagen(ctx, input_text:str):
         [f"| Użytkownik: {chat[0]} | Bot: {chat[1]} |" for chat in reversed(previous_chats)]
     )
 
-    cursor.execute("SELECT note, timestamp FROM bot_notes ORDER BY timestamp DESC LIMIT 17")
+    cursor.execute("SELECT note, timestamp FROM bot_notes ORDER BY timestamp DESC LIMIT 15")
     notes = cursor.fetchall()
     conn.commit()
     # Tworzenie kontekstu rozmowy
@@ -262,7 +313,42 @@ async def gremlin_chat(ctx, input_text:str):
             #genai.configure(api_key=config["GEMINI_API_KEY"])
             #model = genai.GenerativeModel("gemini-1.5-flash"
 
-            response = chat.send_message(text_with_context)
+            if ctx.message.attachments:
+                attachment = ctx.message.attachments[0]
+        
+                # Pobranie pliku do pamięci (jako bajty)
+                file_bytes = await attachment.read()
+                file_stream = io.BytesIO(file_bytes)
+                mime_type, _ = mimetypes.guess_type(attachment.filename)
+                clear_filename = sanitize_filename(generate_random_uid()+attachment.filename)
+                if mime_type is None:
+                    mime_type = "application/octet-stream"
+                myfile = genai.upload_file(file_stream, name=clear_filename, mime_type=mime_type)
+                print(f"{myfile=}")
+                response = chat.send_message( [myfile,"\n przesłano plik odnieś się do niego najlepiej jak umiesz, użytkownik po coś go przesłał \n",text_with_context])
+                
+            elif ctx.message.reference:
+                try:
+                    referenced_message = await ctx.channel.fetch_message(ctx.message.reference.message_id)
+                    if referenced_message.attachments:
+                        attachment = referenced_message.attachments[0]
+                
+                        # Pobranie pliku do pamięci (jako bajty)
+                        file_bytes = await attachment.read()
+                        file_stream = io.BytesIO(file_bytes)
+                        mime_type, _ = mimetypes.guess_type(attachment.filename)
+                        clear_filename = sanitize_filename(generate_random_uid()+attachment.filename)
+                        if mime_type is None:
+                            mime_type = "application/octet-stream"
+                        myfile = genai.upload_file(file_stream, name=clear_filename, mime_type=mime_type)
+                        print(f"{myfile=}")
+                        response = chat.send_message( [myfile,"\n przesłano plik odnieś się do niego najlepiej jak umiesz, użytkownik po coś go przesłał \n",text_with_context])
+                    else:
+                        response = chat.send_message(text_with_context)    
+                except:
+                    response = chat.send_message(text_with_context)
+            else:        
+                response = chat.send_message(text_with_context)
             
             #response = model.generate_content(text_with_context)
             bot_response = response.text

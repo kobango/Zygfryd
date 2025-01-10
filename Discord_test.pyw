@@ -20,6 +20,8 @@ from gremlin_chat import gremlin_chat
 import global_variables
 from enum import Enum
 
+global processed_text 
+processed_text = 0
 
 config = load_config()
 
@@ -290,21 +292,17 @@ async def hello(ctx):
 async def echo(ctx):
     await ctx.channel.send(ctx.message.content[6:])
 
-@bot.command(pass_context=True, description="Chat with AI basend on Gemini", help="BART API")
+@bot.command(pass_context=True, description="Chat with AI basend on Gemini", help="GEMINI API")
 async def chat(ctx):
+    global processed_text 
     try:
-        input_text = ctx.message.content[4:]
-        # Send an API request and get a respons
-        await gremlin_chat(ctx,input_text)
-        
-        #genai.configure(api_key=config["GEMINI_API_KEY"])
-        #model = genai.GenerativeModel("gemini-1.5-flash")
-        #text_with_contekst = "Jesteś elementem bota na diskordzie a to zadany ci tekst, nazywasz się Zygfryd, odpowiedzi dłuższe niż 1.5k znaków będą jako pliki tekstowe więc stosuj w nim odpowiednie formatowanie, odpowiedz najlepiej jak umiesz:"+input_text
-        #response = model.generate_content(text_with_contekst)
-        #if len(response.text) >1500:
-        #    await send(ctx,response.text)
-        #else:
-        #    await ctx.channel.send(response.text)
+        if processed_text <2:
+            input_text = ctx.message.content[4:]
+            processed_text+=1
+            await gremlin_chat(ctx,input_text)
+            processed_text-=1
+        else:
+            await ctx.channel.send("Zajęte, proszę pisać później")
     except Exception as e:    
         log(str(e) + str(type(e)) + ' - ' + str(e.args))
         await ctx.channel.send("Błąd :" + str(e) + str(type(e)) + ' - ' + str(e.args))
@@ -396,6 +394,8 @@ async def reminder_agent(bot):
 
 @tasks.loop(minutes=10)
 async def voice_evaluator(bot):
+    processed_text = 0
+
     bot_voice_chanels = bot.voice_clients
     if len(bot_voice_chanels) > 0:
             for vc in bot_voice_chanels:    
@@ -419,6 +419,11 @@ async def on_message(message):
             with con:
                 con.execute(sql, val)
                 con.commit()
+            if bot.user in message.mentions:
+                ctx = await bot.get_context(message)
+                # Wywołanie komendy greet za pomocą invoke
+                await ctx.invoke(chat)
+
         await bot.process_commands(message)
     except Exception as e:    
         log(str(e) + str(type(e)) + ' - ' + str(e.args))
@@ -428,7 +433,8 @@ async def on_message(message):
 
 @bot.event
 async def on_ready():
-    reminder_agent.start(bot)
+    if not reminder_agent.is_running():
+        reminder_agent.start(bot)
     voice_evaluator.start(bot)
 
 @bot.event
