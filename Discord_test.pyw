@@ -415,7 +415,8 @@ async def on_message(message):
     try:
         sql = "INSERT INTO logs (usser, tresc, data) values(?, ?, datetime('now'))"
         val = (str(message.author), str(message.content))
-        if (message.author != 'Zygfryd#3906'):
+        if str(message.author) not in ('Zygfryd#3906','slonzak (Ślonzak)','oskar__2137 (Oskar)'):
+        #if str(message.author) not in ('Zygfryd#3906'):
             with con:
                 con.execute(sql, val)
                 con.commit()
@@ -424,7 +425,7 @@ async def on_message(message):
                 # Wywołanie komendy greet za pomocą invoke
                 await ctx.invoke(chat)
 
-        await bot.process_commands(message)
+            await bot.process_commands(message)
     except Exception as e:    
         log(str(e) + str(type(e)) + ' - ' + str(e.args))
         await message.channel.send("Błąd :" + str(e) + str(type(e)) + ' - ' + str(e.args))
@@ -435,7 +436,8 @@ async def on_message(message):
 async def on_ready():
     if not reminder_agent.is_running():
         reminder_agent.start(bot)
-    voice_evaluator.start(bot)
+    if not voice_evaluator.is_running():
+        voice_evaluator.start(bot) 
 
 @bot.event
 async def on_member_join(member):
