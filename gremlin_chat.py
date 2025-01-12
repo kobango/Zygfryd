@@ -416,7 +416,7 @@ async def gremlin_chat(ctx, input_text:str):
                     conn.execute(f"INSERT INTO bot_notes (note,server) VALUES (?, ?)",(note_text,str(ctx.guild.id)))
                     conn.commit()
                     if "<usser" in bot_response:
-                        output_text, usser_note_text = bot_response.split("<usser>", 1)
+                        output_text_2, usser_note_text = bot_response.split("<usser>", 1)
                         conn.execute(f"INSERT INTO usser_opinion (note,usser) VALUES (?, ?)",(usser_note_text,str(ctx.message.author)))
                         conn.commit()
             else:
