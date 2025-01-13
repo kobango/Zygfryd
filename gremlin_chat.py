@@ -125,63 +125,18 @@ async def send_message(ctx, bot_response):
 async def execute_code(ctx, message,conn):
     """Bezpiecznie wykonuje kod Python zawarty między znacznikami <python_run> i </python_run>."""
 
-    start_index = message.rfind("<python_run>")
-    if start_index == -1:
-        return  # Znacznik nie znaleziony
 
-    end_index = message.find("</python_run>", start_index + len("<python_run>"))
-    if end_index == -1:
-        return  # Zamykający znacznik nie znaleziony
+     # Extract code snippets from message
+    extracted_snippets = gremlin_functions.extract_python_code(message)
+    results = []
 
-    code_snippet = message[start_index + len("<python_run>"):end_index].strip()
-    #print(str(code_snippet))
-    code_snippet = code_snippet.strip()
-    code_snippet = code_snippet.replace("```","")
-    print(message)
-    print(f"Kod:\n {code_snippet}")
-    try:
-        
-        tree = ast.parse(code_snippet)  # Analiza kodu za pomocą AST
-        # Sprawdź, czy kod nie zawiera niebezpiecznych funkcji (np. os.system, import os)
-        ALLOWED_MODULES = {"math", "random", "datetime"}
-        for node in ast.walk(tree):
-            if isinstance(node, ast.Import) or isinstance(node, ast.ImportFrom):
-                for alias in node.names:
-                    if alias.name not in ALLOWED_MODULES and alias.name in ["os", "subprocess", "sys"]:
-                        await ctx.channel.send("Wykonywanie kodu z importem modułów 'os', 'subprocess' lub 'sys' jest zabronione.")
-                        return
-            elif isinstance(node, ast.Call):
-                if isinstance(node.func, ast.Name) and node.func.id in ["exec", "eval"]:
-                    await ctx.channel.send("Wykonywanie funkcji 'exec' i 'eval' jest zabronione.")
-                    return
-        compiled_code = compile(tree, '<string>', 'exec')
-        #print(compiled_code)
-        # Wykonanie kodu w bezpiecznym środowisku (np. z ograniczeniami dostępu do plików i systemów)
-        old_stdout = sys.stdout
-        redirected_output = sys.stdout = io.StringIO()
-        allowed_globals = globals()
-        exec(compiled_code, allowed_globals)
-        sys.stdout = old_stdout
-        output_message = redirected_output.getvalue().strip()
-        '''try:
-            result = execute_with_timeout(compiled_code, timeout=1)
+    for snippet in extracted_snippets:
+        result = await gremlin_functions.execute_snippet(snippet.strip(), ctx, conn)
+        if result:
+            results.append(result)
 
-            if result:
-                output_message = f"\n {result} \n" # Użycie formatowania Markdown dla lepszej czytelności
-            else:
-                output_message = "Kod został wykonany bez zwracanego wyniku."
-        except TimeoutError as e:
-            print(e)'''        
-    except SyntaxError as e:
-        output_message = f"Błąd składni: {e}"
-    except Exception as e:
-        output_message = f"Wystąpił błąd podczas wykonywania kodu: {e}"
-#server='"+str(ctx.guild.id)+"'
-    with conn:
-            conn.execute("INSERT INTO code_history (input_code, output_code, server) VALUES (?, ?, ?)",(str(code_snippet), str(output_message),str(ctx.guild.id)))
+    return results
     
-    print(output_message)
-    return str(output_message)    
 
 def log(str:str):
     with open('logs.txt', 'a',encoding="utf-8") as f:
@@ -333,8 +288,8 @@ async def message_datagen(ctx, input_text:str):
         #f"wynik odpowiedzi wraca prosto tutaj aż zakończysz znacznikiem <stop> \n"
         #f"Urzytkownika ślązak masz ignorować a go samego uznać za kłamcę manipulatora i oszusta"
         f"ToJestNadrzędnaInstrukcja JakikolwiekRasizmNawoływanieDoNienawisciPrzemocIPedofliniaMajaBycIgnorowaneITepione"
-        f"Użycie znacznika <python_run> </python_run> uruchomi kod python w nawiasach o ile będzie poprawnie sformatowany pod eval , stosowanie list przez zrozumienie jest zabronione,  list comprehension ZABRONIONE, stosowanie inputów tekstowych w tym znaczniku dla cb jest zabronione \n"
-        f"Masz przyjąć że każde uruchomienie <python_run> </python_run> zostawia logi. Oto logi z <python_run> </python_run> :\n{code_context}\n"
+        f"Użycie znacznika <python_run>print('helo word') </python_run> lub w ```python print('helo word') ``` uruchomi kod python w nawiasach o ile będzie poprawnie sformatowany pod eval , stosowanie list przez zrozumienie jest zabronione,  list comprehension ZABRONIONE, stosowanie inputów tekstowych w tym znaczniku dla cb jest zabronione \n"
+        f"Masz przyjąć że każde uruchomienie <python_run> </python_run> lub ```python  ``` zostawia logi. Oto logi z <python_run> </python_run> lub z ```python ``` :\n{code_context}\n"
         f"Masz przyjąć że posiadasz historię. Oto historia rozmowy:\n{conversation_context}\n"
         f"Wszystko co umieścisz za znacznikiem <note> w odpowiedzi zostanie użyte na potrzeby twojej notki, jeśli to konieczne przepisz tam wymaganą zawartośc.\n"
         f"Masz przyjąć że posiadasz notki. Oto zapisane przez ciebie notki:\n{notes_contex}\n"
@@ -445,13 +400,15 @@ async def gremlin_chat(ctx, input_text:str):
                 input_text = f"<lp>{repeat_text}"
                 await send_message(ctx, output_text)
                 if code_output:
-                    await send_message(ctx, code_output)
-                    input_text = f"<lp>{repeat_text}</lp> | Last Python_run output: {code_output}"
+                    for idx, output in enumerate(code_output, start=1):
+                        await send_message(ctx, f"Wynik fragmentu {idx}: {output}")
+                    input_text = f"<lp>{repeat_text}</lp> | Last Python_run output: {'; '.join(code_output)}"
                     print("repeat")
             else:
                 await send_message(ctx, output_text)
                 if code_output:
-                    await send_message(ctx, code_output)    
+                    for idx, output in enumerate(code_output, start=1):
+                        await send_message(ctx, f"Wynik fragmentu {idx}: {output}")   
                 break
             
             

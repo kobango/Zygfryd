@@ -297,7 +297,10 @@ async def chat(ctx):
     global processed_text 
     try:
         if processed_text <2:
-            input_text = ctx.message.content[4:]
+            if ctx.message.content[:4] == '$chat':
+                input_text = ctx.message.content[4:]
+            else:
+                input_text = ctx.message.content
             processed_text+=1
             await gremlin_chat(ctx,input_text)
             processed_text-=1
