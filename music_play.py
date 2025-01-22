@@ -10,6 +10,7 @@ import time
 import asyncio
 from moviepy.tools import subprocess_call
 import youtube_dl
+from yt_dlp import YoutubeDL
 
 
 
@@ -86,24 +87,9 @@ async def copy_existing_musicfile(url):
     return filename 
 
 
-async def downland_youtube_dl(message,url):
-    SAVE_PATH = os.getcwd() + '/Muzyka'+'/'+str(message.guild.id)
-    ydl_opts = {
-        'format': 'bestaudio/best',
-        'cachedir': False,
-        'postprocessors': [{
-            'key': 'FFmpegExtractAudio',
-            'preferredcodec': 'mp3',
-            'preferredquality': '192',
-        }],
-    }
-    with youtube_dl.YoutubeDL(ydl_opts) as ydl:
-        output =ydl.download([url])
-    return output
 
 
-
-async def downland_m(message,url,start_time=-1,end_time=-1):
+async def downland_x(message,url,start_time=-1,end_time=-1):
     try:
         os.mkdir(os.getcwd() + '/Muzyka')
     except:
@@ -154,6 +140,66 @@ async def downland_m(message,url,start_time=-1,end_time=-1):
         log(str(e) + str(type(e)) + ' - ' + str(e.args))
         print(str(e))
         asyncio.create_task(message.channel.send("Error: "+str(e)))
+        file = ""
+
+    return file
+
+async def downland_m(message, url, start_time=-1, end_time=-1):
+    try:
+        os.makedirs(os.path.join(os.getcwd(), 'Muzyka', str(message.guild.id)), exist_ok=True)
+        SAVE_PATH = os.path.join(os.getcwd(), 'Muzyka', str(message.guild.id))
+
+        # Sprawdzenie, czy plik został już pobrany
+        file = await copy_existing_musicfile(url)
+        
+        if file == '':
+            try:
+                options = {
+                    "format": "worstaudio",  # Pobieranie najgorszej dostępnej jakości audio
+                    "outtmpl": os.path.join(SAVE_PATH, "%(title)s.%(ext)s"),
+                    "postprocessors": [
+                        {
+                            "key": "FFmpegExtractAudio",
+                            "preferredcodec": "mp3",  # Konwersja do MP3
+                            "preferredquality": "64",  # Najniższa jakość
+                        }
+                    ],
+                }
+
+                with YoutubeDL(options) as ydl:
+                    info = ydl.extract_info(url, download=True)
+                    file = os.path.join(SAVE_PATH, f"{info['title']}.mp3")
+                    
+                local_con = sl.connect('my-test.db')    
+                sql = "INSERT INTO mlists (server, url, filename, loop, listname, actual, data, desc) values(?, ?, ?, ?, ?, 0, datetime('now'),?)"
+                loop = 0
+                listname = 'play_url'
+                name = str(file)
+                val = (str(0), str(url), str(file),int(loop),str(listname), str(name))
+                with local_con:
+                    local_con.execute(sql, val)
+            except Exception as e:
+                await message.channel.send(f"Error during download: {str(e)}")
+                file = ''
+
+        # Jeśli zdefiniowano `start_time`, wycinanie fragmentu audio
+        if file and start_time > -1:
+            try:
+                if end_time < 1:
+                    # Pobierz czas trwania z metadanych
+                    with YoutubeDL() as ydl:
+                        info = ydl.extract_info(url, download=False)
+                        end_time = info.get("duration", 0)
+
+                file = subclip(file, start_time, end_time)
+
+            except Exception as e:
+                await message.channel.send(f"Error during clipping: {str(e)}")
+                file = ''
+
+    except Exception as e:
+        log(f"{str(e)} {type(e)} - {str(e.args)}")
+        await message.channel.send(f"Error: {str(e)}")
         file = ""
 
     return file    
@@ -280,7 +326,12 @@ def play_actual(ctx,listname):
                 #print(e)
                 pass
             voice_client = ctx.guild.voice_client
-            voice_client.pause()
+            if voice_client:
+                voice_client.pause()
+            else:
+                channel = message.author.voice.channel
+                channel.connect()
+                voice_client = message.guild.voice_client
             voice_client.play(discord.FFmpegPCMAudio(executable="ffmpeg-master-latest-win64-gpl/bin/ffmpeg.exe", source=row[0]), after=lambda e: play_next(ctx,listname))
             
 
@@ -293,7 +344,8 @@ def play_next(ctx, listname):
         loop = row[0]
     r_querry.close()
     voice_client = ctx.guild.voice_client
-    voice_client.stop()
+    if voice_client:
+        voice_client.stop()
     if loop<1:
         next_m(ctx,listname)   
     
