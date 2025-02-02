@@ -10,6 +10,7 @@ import time
 import asyncio
 from moviepy.tools import subprocess_call
 import youtube_dl
+import uuid
 from yt_dlp import YoutubeDL
 
 
@@ -27,7 +28,6 @@ def log(str:str):
 
 async def play_m(message,file):
     
-    
     try:
         music_path = os.getcwd() + '/Muzyka'
         if not message.author.voice:
@@ -39,25 +39,44 @@ async def play_m(message,file):
                 await channel.connect()
                 voice_client = message.guild.voice_client
             else:
-                await voice_client.disconnect()
-                await channel.connect()
+                try:
+                    await voice_client.disconnect()
+                    await channel.connect()
+                except:
+                    pass    
+                
                 voice_client = message.guild.voice_client
             #print(file)
             #print(music_path)
+        if voice_client and voice_client.is_connected():
             voice_client.play(
                 discord.FFmpegPCMAudio(executable="ffmpeg-master-latest-win64-gpl/bin/ffmpeg.exe", source=file))
+        else:
+            try:
+                await voice_client.disconnect()
+                await channel.connect()
+            except:
+                pass    
+            
+            voice_client.play(
+                discord.FFmpegPCMAudio(executable="ffmpeg-master-latest-win64-gpl/bin/ffmpeg.exe", source=file))
+            
     except Exception as e:
         log(str(e) + str(type(e)) + ' - ' + str(e.args))
         await message.channel.send("Błąd uruchomienia :" + str(e) + str(type(e)) + ' - ' + str(e.args))
         voice_client = message.guild.voice_client
         if voice_client is not None:
-            await voice_client.disconnect()
+            try:
+                await voice_client.disconnect()
+            except:
+                pass    
         
 async def play_url(message,url):
-    try:    
+    try:
         file = await downland_m(message,url)
         if file is not None and file != '':
             await play_m(message,file)
+             
 
     except Exception as e: 
         log(str(e) + str(type(e)) + ' - ' + str(e.args))
@@ -65,6 +84,7 @@ async def play_url(message,url):
         voice_client = message.guild.voice_client
         if voice_client is not None:
             await voice_client.disconnect()
+            
 
 def subclip(file,start_time,end_time):
     #print(file)
@@ -151,33 +171,40 @@ async def downland_m(message, url, start_time=-1, end_time=-1):
 
         # Sprawdzenie, czy plik został już pobrany
         file = await copy_existing_musicfile(url)
-        
+
         if file == '':
             try:
+                await message.channel.send(f"Download start")
+                unique_code = str(uuid.uuid4())  # Generowanie unikalnego identyfikatora
                 options = {
                     "format": "worstaudio",  # Pobieranie najgorszej dostępnej jakości audio
-                    "outtmpl": os.path.join(SAVE_PATH, "%(title)s.%(ext)s"),
+                    "outtmpl": os.path.join(SAVE_PATH, f"{unique_code}.%(ext)s"),  # Ustawienie nazwy pliku na unikalny kod
                     "postprocessors": [
                         {
                             "key": "FFmpegExtractAudio",
                             "preferredcodec": "mp3",  # Konwersja do MP3
-                            "preferredquality": "64",  # Najniższa jakość
+                            "preferredquality": "128",  # Najniższa jakość
                         }
                     ],
                 }
 
                 with YoutubeDL(options) as ydl:
                     info = ydl.extract_info(url, download=True)
-                    file = os.path.join(SAVE_PATH, f"{info['title']}.mp3")
-                    
-                local_con = sl.connect('my-test.db')    
-                sql = "INSERT INTO mlists (server, url, filename, loop, listname, actual, data, desc) values(?, ?, ?, ?, ?, 0, datetime('now'),?)"
+                    await message.channel.send(f"MP3 conversion start: {str(info.get("title", "Unknown"))}")
+                    file = os.path.join(SAVE_PATH, f"{unique_code}.mp3")
+
+                # Dodanie rekordu do bazy danych
+                local_con = sl.connect('my-test.db')
+                sql = """
+                    INSERT INTO mlists (server, url, filename, loop, listname, actual, data, desc)
+                    VALUES (?, ?, ?, ?, ?, 0, datetime('now'), ?)
+                """
                 loop = 0
                 listname = 'play_url'
-                name = str(file)
-                val = (str(0), str(url), str(file),int(loop),str(listname), str(name))
+                val = (str(message.guild.id), str(url), str(file), int(loop), str(listname), str(info.get("title", "Unknown")))
                 with local_con:
                     local_con.execute(sql, val)
+                await message.channel.send(f"Added to database as name: {str(info.get("title", "Unknown"))}")    
             except Exception as e:
                 await message.channel.send(f"Error during download: {str(e)}")
                 file = ''
@@ -199,10 +226,10 @@ async def downland_m(message, url, start_time=-1, end_time=-1):
 
     except Exception as e:
         log(f"{str(e)} {type(e)} - {str(e.args)}")
-        await message.channel.send(f"Error: {str(e)}")
+        await message.channel.send(f"Error downland: {str(e)}")
         file = ""
 
-    return file    
+    return file
 
 
 async def play_from_list(ctx,con,listname:str='main',name:str=''):
@@ -237,7 +264,7 @@ async def play_from_list(ctx,con,listname:str='main',name:str=''):
 
     except Exception as e:
         log(str(e) + str(type(e)) + ' - ' + str(e.args))
-        await ctx.channel.send("Błąd zapisu :" + str(e) + str(type(e)) + ' - ' + str(e.args))
+        await ctx.channel.send("Błąd listy :" + str(e) + str(type(e)) + ' - ' + str(e.args))
         voice_client = ctx.guild.voice_client
         if voice_client is not None:
             await voice_client.disconnect()
@@ -329,9 +356,9 @@ def play_actual(ctx,listname):
             if voice_client:
                 voice_client.pause()
             else:
-                channel = message.author.voice.channel
+                channel = ctx.message.author.voice.channel
                 channel.connect()
-                voice_client = message.guild.voice_client
+                voice_client = ctx.message.guild.voice_client
             voice_client.play(discord.FFmpegPCMAudio(executable="ffmpeg-master-latest-win64-gpl/bin/ffmpeg.exe", source=row[0]), after=lambda e: play_next(ctx,listname))
             
 

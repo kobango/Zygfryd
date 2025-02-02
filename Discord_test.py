@@ -1,4 +1,5 @@
 import asyncio
+import threading
 import discord
 from discord.ext import commands
 #from discord import app_commands
@@ -210,6 +211,8 @@ async def play_file(ctx, file):
 @bot.command(pass_context=True,aliases=['odtwarzaj z url'], description="Play using url", help="Play url")
 async def play_url(ctx,url):
     print('uruchomiono')
+
+    #asyncio.create_task(music_play.play_url(ctx.message, url))
     await music_play.play_url(ctx.message,url)
 
 @bot.command(pass_context=True, description="Pause voice client", help="Pause")
