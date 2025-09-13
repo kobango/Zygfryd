@@ -65,7 +65,7 @@ async def play_m(message,file):
         log(str(e) + str(type(e)) + ' - ' + str(e.args))
         await message.channel.send("Błąd uruchomienia :" + str(e) + str(type(e)) + ' - ' + str(e.args))
         voice_client = message.guild.voice_client
-        if voice_client is not None:
+        if voice_client and voice_client.is_connected():
             try:
                 await voice_client.disconnect()
             except:
@@ -166,6 +166,7 @@ async def downland_x(message,url,start_time=-1,end_time=-1):
 
 async def downland_m(message, url, start_time=-1, end_time=-1):
     try:
+        url = url.split('&')[0]
         os.makedirs(os.path.join(os.getcwd(), 'Muzyka', str(message.guild.id)), exist_ok=True)
         SAVE_PATH = os.path.join(os.getcwd(), 'Muzyka', str(message.guild.id))
 
@@ -178,6 +179,7 @@ async def downland_m(message, url, start_time=-1, end_time=-1):
                 unique_code = str(uuid.uuid4())  # Generowanie unikalnego identyfikatora
                 options = {
                     "format": "worstaudio",  # Pobieranie najgorszej dostępnej jakości audio
+                    "noplaylist": True,
                     "outtmpl": os.path.join(SAVE_PATH, f"{unique_code}.%(ext)s"),  # Ustawienie nazwy pliku na unikalny kod
                     "postprocessors": [
                         {

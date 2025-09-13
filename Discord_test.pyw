@@ -5,6 +5,7 @@ from discord.ext import commands
 from discord.ext import tasks
 import pytube
 import os
+import sys
 from pytube import YouTube
 from pytube import Playlist
 import sqlite3 as sl
@@ -210,8 +211,8 @@ async def play_file(ctx, file):
 @bot.command(pass_context=True,aliases=['odtwarzaj z url'], description="Play using url", help="Play url")
 async def play_url(ctx,url):
     print('uruchomiono')
-    asyncio.create_task(music_play.play_url(ctx.message, url))
-    #await music_play.play_url(ctx.message,url)
+    #asyncio.create_task(music_play.play_url(ctx.message, url))
+    await music_play.play_url(ctx.message,url)
 
 @bot.command(pass_context=True, description="Pause voice client", help="Pause")
 async def pause(ctx):
@@ -270,11 +271,19 @@ async def cmd_execute(ctx,command):
         output = subprocess.check_output(command, shell=True)
         await send(ctx,str(output.decode("utf-8",errors="ignore")))
 
-@bot.command(pass_context=True, description=" DO NOT USE TEST COMMAND", help="DO NOT", hidden= True)      
-async def shuttdown(ctx):
-    await ctx.channel.send("Starting shutdownn comand...")
-    time.sleep(2)
-    os.system("shutdown /r /t 1")    
+
+
+@bot.command(pass_context=True, description=" DO NOT USE TEST COMMAND", help="DO NOT", hidden= True, aliases=['shuttdown'])      
+async def shutdown(ctx):
+    await ctx.channel.send("Restarting bot...")
+    await asyncio.sleep(2)
+    # uruchamia ten sam program jeszcze raz
+    os.execv(sys.executable, ['python'] + sys.argv)
+
+#async def shuttdown(ctx):
+#    await ctx.channel.send("Starting shutdownn comand...")
+#    time.sleep(2)
+#    os.system("shutdown /r /t 1")
 
 
 @bot.command(pass_context=True, description=" DO NOT USE TEST COMMAND DROP TABLE IN DATABASE", help="DO NOT", hidden= True)             
