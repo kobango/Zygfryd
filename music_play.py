@@ -8,6 +8,7 @@ from pytube import Playlist
 import sqlite3 as sl
 import time
 import asyncio
+import subprocess
 from moviepy.tools import subprocess_call
 import youtube_dl
 import uuid
@@ -73,10 +74,15 @@ async def play_m(message,file):
         
 async def play_url(message,url):
     try:
-        file = await downland_m(message,url)
+        file = await downland_n(message,url)
         if file is not None and file != '':
             await play_m(message,file)
-             
+        
+            voice_client = message.guild.voice_client
+            await asyncio.sleep(10)  # czekamy 10 sekund
+            if voice_client is None or not voice_client.is_playing():
+                await message.channel.send("The bot didn't start playing within 10 seconds! Resetting the command!")
+                await play_m(message,file)    
 
     except Exception as e: 
         log(str(e) + str(type(e)) + ' - ' + str(e.args))
@@ -84,6 +90,8 @@ async def play_url(message,url):
         voice_client = message.guild.voice_client
         if voice_client is not None:
             await voice_client.disconnect()
+            
+            
             
 
 def subclip(file,start_time,end_time):
@@ -161,6 +169,80 @@ async def downland_x(message,url,start_time=-1,end_time=-1):
         print(str(e))
         asyncio.create_task(message.channel.send("Error: "+str(e)))
         file = ""
+
+    return file
+
+
+async def downland_n(message, url, start_time=-1, end_time=-1):
+    url = url.split('&')[0]
+    SAVE_PATH = os.path.join(os.getcwd(), 'Muzyka', str(message.guild.id))
+    os.makedirs(SAVE_PATH, exist_ok=True)
+
+    # Sprawdzenie, czy plik został już pobrany
+    file = await copy_existing_musicfile(url)
+
+    if file == '':
+        try:
+            await message.channel.send("Download start")
+            unique_code = str(uuid.uuid4())
+            out_file = os.path.join(SAVE_PATH, f"{unique_code}.mp3")
+
+            # 1) Pobranie bezpośredniego URL do strumienia audio
+            def get_direct_url():
+                with YoutubeDL({"format": "worstaudio", "noplaylist": True}) as ydl:
+                    info = ydl.extract_info(url, download=False)
+                    return info['url'], info.get('title', 'Unknown')
+            direct_url, title = await asyncio.to_thread(get_direct_url)
+
+            # 2) Natychmiastowe odtwarzanie (np. dla Discorda)
+            # Możesz tu użyć FFmpegPCMAudio(direct_url) w play_m()
+            file = out_file  # zwracamy od razu docelową ścieżkę
+
+            # 3) Równoległa konwersja do mp3 w tle
+            ffmpeg_cmd = [
+                "ffmpeg", "-y", "-i", direct_url,
+                "-vn", "-c:a", "libmp3lame", "-b:a", "192k",
+                out_file
+            ]
+            asyncio.create_task(asyncio.create_subprocess_exec(
+                *ffmpeg_cmd,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL
+            ))
+
+            # 4) Dodanie rekordu do bazy danych
+            local_con = sl.connect('my-test.db')
+            sql = """
+                INSERT INTO mlists (server, url, filename, loop, listname, actual, data, desc)
+                VALUES (?, ?, ?, ?, ?, 0, datetime('now'), ?)
+            """
+            loop = 0
+            listname = 'play_url'
+            val = (str(message.guild.id), str(url), str(file), int(loop), str(listname), str(title))
+            with local_con:
+                local_con.execute(sql, val)
+
+            await message.channel.send(f"Added to database as name: {title}")
+
+        except Exception as e:
+            await message.channel.send(f"Error during download: {str(e)}")
+            file = ''
+
+    # Opcjonalne przycinanie fragmentu audio
+    if file and start_time > -1:
+        try:
+            if end_time < 1:
+                # Pobierz czas trwania z metadanych
+                with YoutubeDL() as ydl:
+                    info = ydl.extract_info(url, download=False)
+                    end_time = info.get("duration", 0)
+
+            # subclip w Twojej implementacji (wycina mp3)
+            file = subclip(file, start_time, end_time)
+
+        except Exception as e:
+            await message.channel.send(f"Error during clipping: {str(e)}")
+            file = ''
 
     return file
 
