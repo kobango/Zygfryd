@@ -365,11 +365,20 @@ async def gremlin_chat(ctx, input_text:str):
             
             #response = model.generate_content(text_with_context)
             bot_response = response.text
+            #print(bot_response)
             if "<note>" in bot_response:
                 if last_output != bot_response:
-                    output_text, note_text = bot_response.split("<note>", 1)  # Ustaw limit podziału na 1
+                    #output_text, note_text = bot_response.split("<note>", 1)  # Ustaw limit podziału na 1
+                    notes = re.findall(r"<note>(.*?)</note>", bot_response, re.DOTALL)
+                    note_text = "\n".join([n.strip() for n in notes])
+                    
+                    # reszta tekstu bez notek
+                    output_text = re.sub(r"<note>.*?</note>", "", bot_response, flags=re.DOTALL).strip()
                 else:
-                    output_text, note_text = bot_response.split("<note>", 1)
+                    #output_text, note_text = bot_response.split("<note>", 1)
+                    notes = re.findall(r"<note>(.*?)</note>", bot_response, re.DOTALL)
+                    note_text = "\n".join([n.strip() for n in notes])
+                    output_text = re.sub(r"<note>.*?</note>", "", bot_response, flags=re.DOTALL).strip()
                     note_text = "Już to myślałeś w wewnętrznym kontekście zakończ operacje natychmiast i nie używaj w tekście <repeat> jeśli nie chcesz dalej powieleń"
                 with conn:
                     #WHERE server='"+str(ctx.guild.id)+"'
@@ -377,7 +386,12 @@ async def gremlin_chat(ctx, input_text:str):
                     conn.execute(f"INSERT INTO bot_notes (note,server) VALUES (?, ?)",(note_text,str(ctx.guild.id)))
                     conn.commit()
                     if "<usser" in bot_response:
-                        output_text_2, usser_note_text = bot_response.split("<usser>", 1)
+                        #output_text_2, usser_note_text = bot_response.split("<usser>", 1)
+                        usser_notes = re.findall(r"<usser>(.*?)</usser>", bot_response, re.DOTALL)
+                        usser_note_text = "\n".join([n.strip() for n in usser_notes])
+
+                        # reszta tekstu bez bloków <usser>
+                        output_text_2 = re.sub(r"<usser>.*?</usser>", "", bot_response, flags=re.DOTALL).strip()
                         conn.execute(f"INSERT INTO usser_opinion (note,usser) VALUES (?, ?)",(usser_note_text,str(ctx.message.author)))
                         conn.commit()
             else:
@@ -402,7 +416,13 @@ async def gremlin_chat(ctx, input_text:str):
             #print(bot_response)
 
             if len(bot_response)>10 and "<repeat>" in bot_response:
-                output_text, repeat_text = bot_response.split("<repeat>", 1)
+                #output_text, repeat_text = bot_response.split("<repeat>", 1)
+                # wyciągamy wszystkie bloki <repeat>...</repeat>
+                repeats = re.findall(r"<repeat>(.*?)</repeat>", bot_response, re.DOTALL)
+                repeat_text = "\n".join([r.strip() for r in repeats])
+
+                # reszta tekstu bez bloków <repeat>
+                output_text = re.sub(r"<repeat>.*?</repeat>", "", bot_response, flags=re.DOTALL).strip()
                 input_text = f"<lp>{repeat_text}"
                 await send_message(ctx, output_text)
                 if code_output:
